@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Rubik's Cube WebSolver</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="container">
+    <h1>Rubik's Cube WebSolver</h1>
+    <p>Scan your cube faces in order: U, R, F, D, L, B</p>
+
+    <video id="video" autoplay playsinline></video>
+
+    <div id="face-buttons" class="buttons-container"></div>
+
+    <button id="solve-btn" disabled>Solve Cube</button>
+
+    <div id="status" class="status"></div>
+    <div id="result" class="result"></div>
+</div>
+
+<script src="main.js"></script>
+</body>
+</html>

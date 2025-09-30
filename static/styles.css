@@ -1,0 +1,92 @@
+/* General page styling */
+body {
+    font-family: Arial, sans-serif;
+    background: #1e1e2f;
+    color: white;
+    text-align: center;
+    margin: 0;
+    padding: 0;
+}
+
+.container {
+    max-width: 800px;
+    margin: 20px auto;
+    padding: 20px;
+}
+
+/* Video feed */
+video {
+    width: 480px;
+    height: 360px;
+    border: 2px solid #555;
+    border-radius: 8px;
+    margin: 10px 0;
+}
+
+/* Buttons */
+button {
+    padding: 10px 20px;
+    margin: 5px;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 16px;
+    transition: 0.2s;
+}
+
+button:hover:not(:disabled) {
+    opacity: 0.8;
+}
+
+#solve-btn {
+    background-color: #4CAF50;
+    color: white;
+    font-weight: bold;
+}
+
+#solve-btn:disabled {
+    background-color: #555;
+    cursor: not-allowed;
+}
+
+/* Scanned face buttons */
+.scanned {
+    background-color: #2d7 !important;
+    color: #000;
+}
+
+/* Buttons container */
+.buttons-container {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    margin-bottom: 15px;
+}
+
+/* Status and result */
+.status {
+    margin: 15px 0;
+    font-weight: bold;
+}
+
+.result {
+    margin: 15px 0;
+}
+
+/* 3x3 preview grid */
+.preview-grid {
+    display: inline-block;
+    margin: 10px;
+}
+
+.preview-row {
+    display: flex;
+}
+
+.preview-cell {
+    width: 30px;
+    height: 30px;
+    margin: 1px;
+    border: 1px solid #111;
+    border-radius: 4px;
+}
