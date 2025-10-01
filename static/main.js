@@ -1,124 +1,206 @@
+// static/main.js
+const video = document.getElementById('video');
+const canvas = document.createElement('canvas');
+const ctx = canvas.getContext('2d');
+const resultDiv = document.getElementById('result');
+const statusDiv = document.getElementById('status');
+const solveBtn = document.getElementById('solve-btn');
+const faceButtonsDiv = document.getElementById('face-buttons');
+
 const FACE_LABELS = ['U','R','F','D','L','B'];
 const COLOR_ORDER = ['W','Y','R','O','G','B'];
-const COLOR_MAP = { 'W':'#fff','Y':'#ff0','R':'#f00','O':'#fa0','G':'#0f0','B':'#00f' };
+const COLOR_MAP = {W:'#fff',Y:'#ff0',R:'#f00',O:'#f90',G:'#0f0',B:'#09f'};
 
-let sessionId = localStorage.getItem('rubiks_session_id') || Math.random().toString(36).slice(2);
+let sessionId = localStorage.getItem('rubiks_session_id') || Math.random().toString(36).substring(2,10);
 localStorage.setItem('rubiks_session_id', sessionId);
 
-const video = document.getElementById('video');
-const faceButtonsDiv = document.getElementById('face-buttons');
-const statusDiv = document.getElementById('status');
-const resultDiv = document.getElementById('result');
-const solveBtn = document.getElementById('solve-btn');
+let faceColors = Array(6).fill(null); // each entry will be an array of 9 letters
+let scanned = Array(6).fill(false);
 
-let scanned = [false,false,false,false,false,false];
-let faceColors = [[],[],[],[],[],[]]; // corrected colors
-
-async function startCamera(){
-    try{
-        const stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:"environment"}});
+async function startCamera() {
+    try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
         video.srcObject = stream;
-    }catch(e){statusDiv.innerText='Camera error: '+e;}
+        await video.play();
+    } catch (e) {
+        statusDiv.innerText = 'Camera error: ' + e;
+    }
 }
 
-function makeFaceButtons(){
-    FACE_LABELS.forEach((label, idx)=>{
-        const btn=document.createElement('button');
-        btn.innerText=`Scan ${label}`;
-        btn.disabled = idx>0;
-        btn.onclick=()=>captureFace(idx,btn);
+function clearResultGrids() {
+    // remove previous preview grids so UI doesn't pile up
+    const existing = resultDiv.querySelectorAll('.preview-grid');
+    existing.forEach(n => n.remove());
+}
+
+function makeFaceButtons() {
+    for (let i = 0; i < FACE_LABELS.length; i++) {
+        const btn = document.createElement('button');
+        btn.innerText = `Scan ${FACE_LABELS[i]}`;
+        btn.disabled = i !== 0;
+        btn.className = 'scan-btn';
+        btn.onclick = () => scanFace(i, btn);
         faceButtonsDiv.appendChild(btn);
-    });
+    }
 }
 
-function updateSolveButton(){solveBtn.disabled=scanned.includes(false);}
+function updateSolveButton() {
+    solveBtn.disabled = scanned.some(s => !s);
+}
 
-async function captureFace(faceIndex, btn){
-    statusDiv.innerText=`Capturing ${FACE_LABELS[faceIndex]}...`;
-    const canvas=document.createElement('canvas');
-    canvas.width=video.videoWidth || 640;
-    canvas.height=video.videoHeight || 480;
-    const ctx=canvas.getContext('2d');
-    ctx.drawImage(video,0,0,canvas.width,canvas.height);
-    const dataUrl=canvas.toDataURL('image/jpeg',0.9);
+async function scanFace(faceIndex, btn) {
+    if (video.readyState !== 4) { statusDiv.innerText = 'Video not ready'; return; }
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    const dataUrl = canvas.toDataURL('image/jpeg');
 
-    try{
-        const res = await fetch('/api/scan',{
-            method:'POST',
-            headers:{'Content-Type':'application/json'},
-            body:JSON.stringify({session_id:sessionId, face_index:faceIndex, image:dataUrl})
+    statusDiv.innerText = `Scanning ${FACE_LABELS[faceIndex]}...`;
+    try {
+        const res = await fetch('/api/scan', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ session_id: sessionId, face_index: faceIndex, image: dataUrl })
         });
-        const j = await res.json();
-        if(j.ok){
-            faceColors[faceIndex] = j.colors.slice();
-            showCorrectionGrid(faceIndex,j.grid);
-            btn.innerText=`Scanned ${FACE_LABELS[faceIndex]} ✓`;
-            btn.style.background='#2d7';
-            scanned[faceIndex]=true;
-            if(faceIndex+1<FACE_LABELS.length) faceButtonsDiv.children[faceIndex+1].disabled=false;
-            updateSolveButton();
-        }else{statusDiv.innerText='Error: '+j.error;}
-    }catch(e){statusDiv.innerText='Error: '+e;}
+
+        const text = await res.text();
+        let j;
+        try { j = JSON.parse(text); }
+        catch (e) {
+            statusDiv.innerText = 'Server returned non-JSON (HTML?). Response: ' + text;
+            return;
+        }
+
+        if (!j.ok) {
+            statusDiv.innerText = 'Scan error: ' + (j.error || 'unknown');
+            return;
+        }
+
+        // Save detected colors (W/Y/R/O/G/B)
+        faceColors[faceIndex] = j.colors.slice();
+        scanned[faceIndex] = true;
+
+        // update UI
+        clearResultGrids();
+        showCorrectionGrid(faceIndex, j.grid);
+
+        btn.innerText = `Scanned ${FACE_LABELS[faceIndex]} ✓`;
+        btn.style.background = '#2d7';
+        // enable next face button
+        if (faceIndex + 1 < FACE_LABELS.length) {
+            faceButtonsDiv.children[faceIndex + 1].disabled = false;
+        }
+        updateSolveButton();
+        statusDiv.innerText = `Scanned ${FACE_LABELS[faceIndex]}. Center detected as ${j.center}`;
+    } catch (e) {
+        statusDiv.innerText = 'Scan failed: ' + e;
+    }
 }
 
-function showCorrectionGrid(faceIndex, grid){
-    const gridDiv=document.createElement('div');
-    gridDiv.className='preview-grid';
-    grid.forEach((row,rowIdx)=>{
-        const rowDiv=document.createElement('div');
-        rowDiv.className='preview-row';
-        row.forEach((c,colIdx)=>{
-            const cell=document.createElement('div');
-            cell.className='preview-cell';
-            cell.style.background=COLOR_MAP[c];
-            cell.dataset.pos=rowIdx*3+colIdx;
-            cell.dataset.face=faceIndex;
-            cell.dataset.color=c;
-            cell.onclick=()=>{
-                let idx=COLOR_ORDER.indexOf(cell.dataset.color);
-                idx=(idx+1)%COLOR_ORDER.length;
-                cell.dataset.color=COLOR_ORDER[idx];
-                cell.style.background=COLOR_MAP[COLOR_ORDER[idx]];
-                faceColors[faceIndex][cell.dataset.pos]=COLOR_ORDER[idx];
+function showCorrectionGrid(faceIndex, grid) {
+    // grid is 2D array of letters
+    const gridDiv = document.createElement('div');
+    gridDiv.className = 'preview-grid';
+    gridDiv.dataset.faceIndex = faceIndex;
+
+    for (let r = 0; r < 3; r++) {
+        const rowDiv = document.createElement('div');
+        rowDiv.className = 'preview-row';
+        for (let c = 0; c < 3; c++) {
+            const pos = r * 3 + c;
+            const letter = grid[r][c];
+            const cell = document.createElement('div');
+            cell.className = 'preview-cell';
+            cell.style.background = COLOR_MAP[letter] || '#333';
+            cell.dataset.pos = pos;
+            cell.dataset.face = faceIndex;
+            cell.dataset.color = letter;
+            // clicking cycles color
+            cell.onclick = () => {
+                let idx = COLOR_ORDER.indexOf(cell.dataset.color);
+                idx = (idx + 1) % COLOR_ORDER.length;
+                cell.dataset.color = COLOR_ORDER[idx];
+                cell.style.background = COLOR_MAP[COLOR_ORDER[idx]];
+                // update faceColors so correction is persisted
+                if (!faceColors[faceIndex]) faceColors[faceIndex] = Array(9).fill('W');
+                faceColors[faceIndex][pos] = COLOR_ORDER[idx];
             };
             rowDiv.appendChild(cell);
-        });
+            // ensure initial value in faceColors too
+            if (!faceColors[faceIndex]) faceColors[faceIndex] = Array(9).fill('W');
+            faceColors[faceIndex][pos] = letter;
+        }
         gridDiv.appendChild(rowDiv);
-    });
+    }
     resultDiv.appendChild(gridDiv);
 }
 
-solveBtn.onclick=async()=>{
-    // build facelet string from corrected colors
-    const color2face={};
-    FACE_LABELS.forEach((f,i)=>{ color2face[faceColors[i][4]]=f; }); // center color mapping
-
-    let facelet_string='';
-    for(let i=0;i<6;i++){
-        for(let j=0;j<9;j++){
-            let c=faceColors[i][j];
-            let f=color2face[c];
-            if(!f){ statusDiv.innerText=`Unknown color at face ${FACE_LABELS[i]} sticker ${j}`; return; }
-            facelet_string+=f;
+solveBtn.onclick = async () => {
+    // ensure all faces are present
+    for (let i = 0; i < 6; i++) {
+        if (!faceColors[i] || faceColors[i].length !== 9) {
+            statusDiv.innerText = `Face ${FACE_LABELS[i]} not ready. Please scan and confirm.`;
+            return;
         }
     }
 
-    statusDiv.innerText='Solving...';
-    try{
-        const res=await fetch('/api/solve',{
-            method:'POST',
-            headers:{'Content-Type':'application/json'},
-            body:JSON.stringify({session_id:sessionId, facelet_string:facelet_string})
-        });
-        const j=await res.json();
-        if(j.ok){
-            resultDiv.innerHTML+='<h3>Solution:</h3><p>'+j.solution+'</p>';
-            statusDiv.innerText='Solved!';
-        }else{
-            statusDiv.innerText='Error: '+j.error+(j.detail?': '+j.detail:'');
-        }
-    }catch(e){statusDiv.innerText='Error: '+e;}
-}
+    // build mapping from center color letter to face letter
+    const color2face = {};
+    for (let i = 0; i < 6; i++) {
+        const centerColor = faceColors[i][4];
+        color2face[centerColor] = FACE_LABELS[i];
+    }
 
+    // validate that we have 6 distinct center colors (recommended)
+    const centers = Object.keys(color2face);
+    if (centers.length < 6) {
+        // not necessarily fatal, but warn user
+        statusDiv.innerText = 'Warning: centers not all distinct. Please check center stickers.';
+        // continue anyway
+    }
+
+    // build facelet string in order U R F D L B, each 9 stickers left->right top->bottom
+    let facelet_string = '';
+    for (let i = 0; i < 6; i++) {
+        for (let j = 0; j < 9; j++) {
+            const col = faceColors[i][j];
+            const mapped = color2face[col];
+            if (!mapped) {
+                statusDiv.innerText = `Unknown color ${col} at face ${FACE_LABELS[i]} sticker ${j}. Please correct.`;
+                return;
+            }
+            facelet_string += mapped;
+        }
+    }
+
+    statusDiv.innerText = 'Solving...';
+    try {
+        const res = await fetch('/api/solve', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ session_id: sessionId, facelet_string: facelet_string })
+        });
+
+        const text = await res.text();
+        let j;
+        try { j = JSON.parse(text); }
+        catch (e) {
+            statusDiv.innerText = 'Solver returned non-JSON: ' + text;
+            return;
+        }
+
+        if (!j.ok) {
+            statusDiv.innerText = 'Solve error: ' + (j.error || 'unknown') + (j.detail ? (': ' + j.detail) : '');
+            return;
+        }
+
+        resultDiv.innerHTML += '<h3>Solution:</h3><p>' + j.solution + '</p>';
+        statusDiv.innerText = 'Solved!';
+    } catch (e) {
+        statusDiv.innerText = 'Solve failed: ' + e;
+    }
+};
+
+// init
 startCamera();
 makeFaceButtons();
